@@ -35,6 +35,7 @@ const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 
 export default function LiveDisplaySystem() {
   const [digits, setDigits] = useState(Array(12).fill(0));
+  const [digitCount, setDigitCount] = useState(12);
   const [chartData, setChartData] = useState({
     labels: [] as string[],
     datasets: [
@@ -47,6 +48,7 @@ export default function LiveDisplaySystem() {
     ],
   });
   const [isRunning, setIsRunning] = useState(false);
+  const [intervalTime, setIntervalTime] = useState(1000);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showSignUp, setShowSignUp] = useState(false);
   const [history, setHistory] = useState<
@@ -67,7 +69,7 @@ export default function LiveDisplaySystem() {
     if (!isRunning || !isAuthenticated) return;
 
     const interval = setInterval(() => {
-      const newDigits = Array.from({ length: 12 }, () =>
+      const newDigits = Array.from({ length: digitCount }, () =>
         Math.floor(Math.random() * 10)
       );
 
@@ -75,10 +77,14 @@ export default function LiveDisplaySystem() {
 
       setDigits(newDigits);
 
-      setHistory((prevHistory) => [
-        ...prevHistory,
-        { timestamp: currentTime, digits: newDigits },
-      ]);
+      setHistory((prevHistory) => {
+        const updatedHistory = [
+          ...prevHistory,
+          { timestamp: currentTime, digits: newDigits },
+        ];
+        // Trim history to the last 100 entries to prevent memory issues
+        return updatedHistory.slice(-100);
+      });
 
       setChartData((prevData) => ({
         labels: [...prevData.labels, currentTime].slice(-20),
@@ -92,10 +98,10 @@ export default function LiveDisplaySystem() {
           },
         ],
       }));
-    }, 1000);
+    }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [isRunning, isAuthenticated]);
+  }, [isRunning, isAuthenticated, digitCount, intervalTime]);
 
   const handleDownload = () => {
     const excelData = history.map((entry) => ({
@@ -115,6 +121,22 @@ export default function LiveDisplaySystem() {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setIsAuthenticated(false);
+  };
+
+  const handleReset = () => {
+    setChartData({
+      labels: [],
+      datasets: [
+        {
+          label: "Average Value",
+          data: [],
+          borderColor: "rgb(75, 192, 192)",
+          tension: 0.1,
+        },
+      ],
+    });
+    setHistory([]);
+    setDigits(Array(digitCount).fill(0));
   };
 
   const chartOptions = {
@@ -167,27 +189,59 @@ export default function LiveDisplaySystem() {
           >
             Stop
           </Button>
+          <Button onClick={handleReset} className="bg-yellow-500 text-white">
+            Reset
+          </Button>
           <Button onClick={handleDownload} className="bg-blue-500 text-white">
             Download
           </Button>
         </div>
       </div>
+
+      <div className="mb-6">
+        <label className="block mb-2 text-sm font-medium text-gray-700">
+          Data Generation Interval (ms):
+        </label>
+        <input
+          type="number"
+          value={intervalTime}
+          onChange={(e) => setIntervalTime(Number(e.target.value))}
+          className="w-full p-2 border rounded"
+          min={100}
+        />
+      </div>
+
+      <div className="mb-6">
+        <label className="block mb-2 text-sm font-medium text-gray-700">
+          Number of Digits:
+        </label>
+        <input
+          type="number"
+          value={digitCount}
+          onChange={(e) => setDigitCount(Number(e.target.value))}
+          className="w-full p-2 border rounded"
+          min={1}
+          max={100}
+        />
+      </div>
+
       <div className="flex flex-wrap justify-center space-x-2 mb-8">
         {digits.map((digit, index) => (
           <div
             key={index}
-            className={`w-12 h-16 flex items-center justify-center text-2xl font-bold rounded shadow ${
-              digit > 7
-                ? "bg-green-200 text-green-700"
-                : digit < 3
-                ? "bg-red-200 text-red-700"
-                : "bg-gray-200 text-gray-800"
-            }`}
+            className={`w-12 h-16 flex items-center justify-center text-2xl font-bold rounded shadow transition-all transform duration-300 scale-100 hover:scale-110`}
+            style={{
+              background: `linear-gradient(135deg, rgb(255, ${
+                255 - digit * 25
+              }, ${255 - digit * 25}), rgb(75, 192, 192))`,
+              color: digit > 5 ? "white" : "black",
+            }}
           >
             {digit}
           </div>
         ))}
       </div>
+
       <Line options={chartOptions} data={chartData} />
     </div>
   );
