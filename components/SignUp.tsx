@@ -14,9 +14,11 @@ const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 export default function SignUp({
   onSignUp,
   onSwitch,
+  onForgotPassword,
 }: {
   onSignUp: () => void;
   onSwitch: () => void;
+  onForgotPassword: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -64,6 +66,16 @@ export default function SignUp({
       <Button type="submit" className="w-full">
         Sign Up
       </Button>
+      <p className="text-center">
+        Forgot your password?{" "}
+        <button
+          type="button"
+          onClick={onForgotPassword}
+          className="text-blue-500 hover:underline"
+        >
+          Reset Password
+        </button>
+      </p>
       <p className="text-center">
         Already have an account?{" "}
         <button
