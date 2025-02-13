@@ -25,7 +25,10 @@ ChartJS.register(
   Legend
 );
 
-const supabase = createClient("SUPABASE_URL", "SUPABASE_ANON_KEY");
+const supabaseUrl = "https://lliemhskmctauvmbqzdi.supabase.co";
+const supabaseAnonKey =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsaWVtaHNrbWN0YXV2bWJxemRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk0Mjg3MzIsImV4cCI6MjA1NTAwNDczMn0.dZ_93DKDL7b-Vww9FTt2uIaOZdwWN-L-zI4uRkaER7M";
+const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 const socket = io("http://localhost:5000");
 
 export default function Dashboard() {
@@ -42,88 +45,80 @@ export default function Dashboard() {
   });
 
   const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // Track authentication state
-  const [anomalies, setAnomalies] = useState<string[]>([]); // Track detected anomalies
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [anomalies, setAnomalies] = useState<string[]>([]);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [signInError, setSignInError] = useState<string | null>(null);
+  const [signUpError, setSignUpError] = useState<string | null>(null);
 
   useEffect(() => {
     const checkAuth = async () => {
-      const { data: user } = await supabase.auth.getUser();
-      if (user) {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
         setIsAuthenticated(true);
       } else {
-        console.error("User is not authenticated");
+        setIsAuthenticated(false);
       }
     };
     checkAuth();
   }, []);
 
-  useEffect(() => {
-    async function fetchHistoricalData() {
-      try {
-        const { data: rows, error } = await supabase
-          .from("display_data")
-          .select("*")
-          .order("timestamp", { ascending: false })
-          .limit(20);
-
-        if (error) throw error;
-
-        const labels = rows.map((row) =>
-          new Date(row.timestamp).toLocaleTimeString()
-        );
-        const averages = rows.map(
-          (row) =>
-            JSON.parse(row.data).reduce((a: number, b: number) => a + b, 0) / 12
-        );
-
-        setData({
-          labels: labels.reverse(),
-          datasets: [
-            {
-              ...data.datasets[0],
-              data: averages.reverse(),
-            },
-          ],
-        });
-
-        setIsLoading(false);
-      } catch (err) {
-        console.error("Error fetching historical data:", err);
+  const handleSignIn = async () => {
+    setSignInError(null);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        setSignInError(error.message);
+      } else {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session) {
+          setIsAuthenticated(true);
+        }
       }
+    } catch (error) {
+      console.error("Sign-in error:", error);
+      setSignInError("An error occurred during sign-in.");
     }
+  };
 
-    fetchHistoricalData();
-
-    socket.on("digitsUpdate", ({ digits }) => {
-      const average =
-        digits.reduce((a: number, b: number) => a + b, 0) / digits.length;
-
-      if (average > 8 || average < 2) {
-        setAnomalies((prevAnomalies) => [
-          ...prevAnomalies,
-          `Anomaly detected at ${new Date().toLocaleTimeString()}: ${digits.join(
-            ""
-          )}`,
-        ]);
+  const handleSignUp = async () => {
+    setSignUpError(null);
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+      if (error) {
+        setSignUpError(error.message);
+      } else {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (signInError) {
+          setSignUpError(signInError.message);
+        } else {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session) {
+            setIsAuthenticated(true);
+          }
+        }
       }
-
-      setData((prevData) => ({
-        labels: [...prevData.labels, new Date().toLocaleTimeString()].slice(
-          -20
-        ),
-        datasets: [
-          {
-            ...prevData.datasets[0],
-            data: [...prevData.datasets[0].data, average].slice(-20),
-          },
-        ],
-      }));
-    });
-
-    return () => {
-      socket.off("digitsUpdate");
-    };
-  }, []);
+    } catch (error) {
+      console.error("Sign-up error:", error);
+      setSignUpError("An error occurred during sign-up.");
+    }
+  };
 
   const options = {
     responsive: true,
@@ -133,7 +128,7 @@ export default function Dashboard() {
       },
       title: {
         display: true,
-        text: "Live Display Data",
+        text: "Chart.js Line Chart",
       },
     },
   };
@@ -141,22 +136,45 @@ export default function Dashboard() {
   return (
     <div className="w-full max-w-3xl mx-auto p-4">
       {!isAuthenticated ? (
-        <div className="text-center">Please log in to view the dashboard</div>
+        <div className="text-center">
+          <h2>Sign In</h2>
+          {signInError && <p style={{ color: "red" }}>{signInError}</p>}
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button onClick={handleSignIn}>Sign In</button>
+
+          <h2>Sign Up</h2>
+          {signUpError && <p style={{ color: "red" }}>{signUpError}</p>}
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button onClick={handleSignUp}>Sign Up</button>
+        </div>
       ) : isLoading ? (
         <div className="text-center">Loading...</div>
       ) : (
         <div>
           <Line options={options} data={data} />
-          {anomalies.length > 0 && (
-            <div className="mt-4 p-4 bg-red-100 text-red-800 rounded">
-              <h3 className="text-lg font-bold">Anomalies Detected:</h3>
-              <ul>
-                {anomalies.map((anomaly, index) => (
-                  <li key={index}>{anomaly}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* ... anomalies display */}
         </div>
       )}
     </div>
