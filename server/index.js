@@ -1,58 +1,111 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const { createClient } = require("@supabase/supabase-js");
-const cors = require("cors");
+import express from "express";
+import { Server } from "socket.io";
+import http from "http";
+import { createClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-app.use(cors());
-app.use(express.json());
+const supabaseUrl = "https://lliemhskmctauvmbqzdi.supabase.co";
+const supabaseKey =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsaWVtaHNrbWN0YXV2bWJxemRpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk0Mjg3MzIsImV4cCI6MjA1NTAwNDczMn0.dZ_93DKDL7b-Vww9FTt2uIaOZdwWN-L-zI4uRkaER7M";
 
-const supabase = createClient("SUPABASE_URL", "SUPABASE_ANON_KEY");
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error("Supabase URL or Key is missing in environment variables");
+}
 
-let displayData = Array(12).fill(0);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-function updateRandomDigit() {
+let displayData = Array.from({ length: 12 }, () =>
+  Math.floor(Math.random() * 10)
+);
+
+const liveNamespace = io.of("/live");
+
+setInterval(async () => {
   const randomIndex = Math.floor(Math.random() * 12);
-  const randomValue = Math.floor(Math.random() * 10);
-  displayData[randomIndex] = randomValue;
+  displayData[randomIndex] = Math.floor(Math.random() * 10);
 
-  io.emit("digitsUpdate", { digits: displayData });
+  const average = displayData.reduce((a, b) => a + b, 0) / displayData.length;
 
-  saveToDatabase(displayData);
-}
+  if (average > 8 || average < 2) {
+    console.warn("Anomaly detected!", { digits: displayData, average });
+  }
 
-async function saveToDatabase(data) {
-  const { error } = await supabase.from("display_data").insert({
-    data: JSON.stringify(data),
-    timestamp: new Date().toISOString(),
+  try {
+    await supabase
+      .from("display_data")
+      .insert([{ data: JSON.stringify(displayData), timestamp: new Date() }]);
+  } catch (error) {
+    console.error("Error saving to database:", error);
+  }
+
+  liveNamespace.emit("digitsUpdate", { digits: displayData, average });
+}, 1000);
+
+liveNamespace.on("connection", (socket) => {
+  console.log("Client connected to live namespace");
+  socket.emit("digitsUpdate", { digits: displayData });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected from live namespace");
   });
-
-  if (error) {
-    console.error("Error saving data:", error);
-  }
-}
-
-setInterval(updateRandomDigit, 1000);
-
-app.get("/data", async (req, res) => {
-  const { data, error } = await supabase
-    .from("display_data")
-    .select("*")
-    .order("timestamp", { ascending: false })
-    .limit(20);
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
-
-  res.json(data);
 });
 
-const PORT = 5000;
-server.listen(PORT, () =>
-  console.log(`Server running on http://localhost:${PORT}`)
+app.get("/api/live-data", (req, res) => {
+  res.json({ digits: displayData });
+});
+
+app.get("/api/historical-data", async (req, res) => {
+  try {
+    const { data: rows, error } = await supabase
+      .from("display_data")
+      .select("*")
+      .order("timestamp", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      throw error;
+    }
+
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching historical data:", error);
+    res.status(500).json({ error: "Failed to fetch historical data" });
+  }
+});
+
+app.post("/api/store-data", async (req, res) => {
+  const apiKey = req.headers["x-api-key"];
+  if (apiKey !== process.env.API_KEY) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const { digits } = req.body;
+  if (!Array.isArray(digits) || digits.length !== 12) {
+    return res.status(400).json({ error: "Invalid data format" });
+  }
+
+  try {
+    await supabase
+      .from("display_data")
+      .insert([{ data: JSON.stringify(digits), timestamp: new Date() }]);
+    res.status(200).json({ message: "Data stored successfully" });
+  } catch (error) {
+    console.error("Error saving custom data:", error);
+    res.status(500).json({ error: "Failed to store data" });
+  }
+});
+
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).json({ error: "An internal server error occurred" });
+});
+
+server.listen(5000, () =>
+  console.log("Server running on http://localhost:5000")
 );

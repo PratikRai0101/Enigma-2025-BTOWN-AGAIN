@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { io, Socket } from "socket.io-client";
+import { io } from "socket.io-client";
+import { createClient } from "@supabase/supabase-js";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -24,14 +25,10 @@ ChartJS.register(
   Legend
 );
 
-interface DigitsUpdateEvent {
-  digits: number[]; // Represents the 12 digits sent by the backend
-}
-
-const socket: Socket = io("http://localhost:5000"); // Adjust the backend URL as needed
+const supabase = createClient("SUPABASE_URL", "SUPABASE_ANON_KEY");
+const socket = io("http://localhost:5000");
 
 export default function Dashboard() {
-  // Define chart data state with proper types
   const [data, setData] = useState({
     labels: [] as string[],
     datasets: [
@@ -44,34 +41,72 @@ export default function Dashboard() {
     ],
   });
 
-  // Track loading state
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false); // Track authentication state
+  const [anomalies, setAnomalies] = useState<string[]>([]); // Track detected anomalies
 
   useEffect(() => {
-    // Fetch historical data from the backend on load
-    fetch("http://localhost:5000/data")
-      .then((response) => response.json())
-      .then((historicalData: { labels: string[]; averages: number[] }) => {
+    const checkAuth = async () => {
+      const { data: user } = await supabase.auth.getUser();
+      if (user) {
+        setIsAuthenticated(true);
+      } else {
+        console.error("User is not authenticated");
+      }
+    };
+    checkAuth();
+  }, []);
+
+  useEffect(() => {
+    async function fetchHistoricalData() {
+      try {
+        const { data: rows, error } = await supabase
+          .from("display_data")
+          .select("*")
+          .order("timestamp", { ascending: false })
+          .limit(20);
+
+        if (error) throw error;
+
+        const labels = rows.map((row) =>
+          new Date(row.timestamp).toLocaleTimeString()
+        );
+        const averages = rows.map(
+          (row) =>
+            JSON.parse(row.data).reduce((a: number, b: number) => a + b, 0) / 12
+        );
+
         setData({
-          labels: historicalData.labels,
+          labels: labels.reverse(),
           datasets: [
             {
               ...data.datasets[0],
-              data: historicalData.averages,
+              data: averages.reverse(),
             },
           ],
         });
-        setIsLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error fetching historical data:", error);
-        setIsLoading(false);
-      });
 
-    // Listen for real-time updates from the backend
-    socket.on("digitsUpdate", (event: DigitsUpdateEvent) => {
+        setIsLoading(false);
+      } catch (err) {
+        console.error("Error fetching historical data:", err);
+      }
+    }
+
+    fetchHistoricalData();
+
+    socket.on("digitsUpdate", ({ digits }) => {
       const average =
-        event.digits.reduce((a, b) => a + b, 0) / event.digits.length;
+        digits.reduce((a: number, b: number) => a + b, 0) / digits.length;
+
+      if (average > 8 || average < 2) {
+        setAnomalies((prevAnomalies) => [
+          ...prevAnomalies,
+          `Anomaly detected at ${new Date().toLocaleTimeString()}: ${digits.join(
+            ""
+          )}`,
+        ]);
+      }
+
       setData((prevData) => ({
         labels: [...prevData.labels, new Date().toLocaleTimeString()].slice(
           -20
@@ -85,7 +120,6 @@ export default function Dashboard() {
       }));
     });
 
-    // Cleanup when component unmounts
     return () => {
       socket.off("digitsUpdate");
     };
@@ -106,10 +140,24 @@ export default function Dashboard() {
 
   return (
     <div className="w-full max-w-3xl mx-auto p-4">
-      {isLoading ? (
-        <div className="text-center">Loading data...</div>
+      {!isAuthenticated ? (
+        <div className="text-center">Please log in to view the dashboard</div>
+      ) : isLoading ? (
+        <div className="text-center">Loading...</div>
       ) : (
-        <Line options={options} data={data} />
+        <div>
+          <Line options={options} data={data} />
+          {anomalies.length > 0 && (
+            <div className="mt-4 p-4 bg-red-100 text-red-800 rounded">
+              <h3 className="text-lg font-bold">Anomalies Detected:</h3>
+              <ul>
+                {anomalies.map((anomaly, index) => (
+                  <li key={index}>{anomaly}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
