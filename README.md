@@ -21,8 +21,10 @@ Install Dependencies: Run the following command to install the project dependenc
 npm install
 
 Set Up Environment Variables: Create a .env.local file in the root of your project directory and add any necessary environment variables. 
+
 For example:
 NEXT_PUBLIC_SUPABASE_URL=https://your-supabase-url.supabase.co
+
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 
 Replace the values with your actual Supabase URL and anonymous key.
