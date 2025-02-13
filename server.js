@@ -3,6 +3,8 @@ import { Server } from "socket.io";
 import http from "http";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import { anomalyDetection } from "./utils/anomalyDetection";
+import cors from "cors";
 
 dotenv.config();
 
@@ -26,14 +28,19 @@ let displayData = Array.from({ length: 12 }, () =>
 
 const liveNamespace = io.of("/live");
 
+app.use(cors());
+app.use(express.json());
+
 setInterval(async () => {
   const randomIndex = Math.floor(Math.random() * 12);
   displayData[randomIndex] = Math.floor(Math.random() * 10);
 
   const average = displayData.reduce((a, b) => a + b, 0) / displayData.length;
 
-  if (average > 8 || average < 2) {
-    console.warn("Anomaly detected!", { digits: displayData, average });
+  const anomalies = anomalyDetection(displayData);
+
+  if (anomalies.length > 0) {
+    console.warn("Anomalies detected!", { digits: displayData, anomalies });
   }
 
   try {
@@ -44,7 +51,11 @@ setInterval(async () => {
     console.error("Error saving to database:", error);
   }
 
-  liveNamespace.emit("digitsUpdate", { digits: displayData, average });
+  liveNamespace.emit("digitsUpdate", {
+    digits: displayData,
+    average,
+    anomalies,
+  });
 }, 1000);
 
 liveNamespace.on("connection", (socket) => {
@@ -90,11 +101,13 @@ app.post("/api/store-data", async (req, res) => {
     return res.status(400).json({ error: "Invalid data format" });
   }
 
+  const anomalies = anomalyDetection(digits);
+
   try {
     await supabase
       .from("display_data")
       .insert([{ data: JSON.stringify(digits), timestamp: new Date() }]);
-    res.status(200).json({ message: "Data stored successfully" });
+    res.status(200).json({ message: "Data stored successfully", anomalies });
   } catch (error) {
     console.error("Error saving custom data:", error);
     res.status(500).json({ error: "Failed to store data" });

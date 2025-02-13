@@ -18,6 +18,7 @@ import SignUp from "./SignUp";
 import ForgotPassword from "@/components/ForgotPassword";
 import { createClient } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
+import axios from "axios";
 
 ChartJS.register(
   CategoryScale,
@@ -55,6 +56,10 @@ export default function LiveDisplaySystem() {
   const [history, setHistory] = useState<
     { timestamp: string; digits: number[] }[]
   >([]);
+  const [pendingData, setPendingData] = useState<
+    { timestamp: string; digits: number[] }[]
+  >([]);
+  const [anomalies, setAnomalies] = useState<string[]>([]);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -78,11 +83,11 @@ export default function LiveDisplaySystem() {
 
       setDigits(newDigits);
 
+      const newEntry = { timestamp: currentTime, digits: newDigits };
+      setPendingData((prev) => [...prev, newEntry]);
+
       setHistory((prevHistory) => {
-        const updatedHistory = [
-          ...prevHistory,
-          { timestamp: currentTime, digits: newDigits },
-        ];
+        const updatedHistory = [...prevHistory, newEntry];
         return updatedHistory.slice(-100);
       });
 
@@ -98,19 +103,71 @@ export default function LiveDisplaySystem() {
           },
         ],
       }));
-    }, 1000);
+
+      detectAnomalies(newDigits);
+    }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [isRunning, isAuthenticated, digits.length]);
+  }, [isRunning, isAuthenticated, digits.length, intervalTime]);
+
+  const anomalyDetection = (digits: number[]): string[] => {
+    const digitCounts: { [key: number]: number } = {};
+    digits.forEach((digit) => {
+      digitCounts[digit] = (digitCounts[digit] || 0) + 1;
+    });
+
+    return Object.entries(digitCounts)
+      .filter(([_, count]) => count > 3)
+      .map(([digit, count]) => `Digit ${digit} is repeated ${count} times`);
+  };
+
+  const detectAnomalies = (newDigits: number[]) => {
+    const anomalies = anomalyDetection(newDigits);
+    if (anomalies.length > 0) {
+      setAnomalies((prev) => [
+        ...prev,
+        `Anomalies detected at ${new Date().toLocaleTimeString()}`,
+      ]);
+    }
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || pendingData.length === 0) return;
+
+    const sendPendingData = async () => {
+      try {
+        await axios.post(
+          "/api/store-data",
+          { digits: pendingData },
+          {
+            headers: {
+              "x-api-key": process.env.API_KEY,
+            },
+          }
+        );
+        setPendingData([]);
+      } catch (error) {
+        console.error("Failed to send data:", error);
+      }
+    };
+
+    const interval = setInterval(sendPendingData, 5000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, pendingData]);
 
   const handleDownload = () => {
-    const excelData = history.map((entry) => ({
-      Timestamp: entry.timestamp,
-      ...entry.digits.reduce((acc, digit, index) => {
-        acc[`Digit ${index + 1}`] = digit;
-        return acc;
-      }, {} as Record<string, number>),
-    }));
+    const excelData = history.map((entry) => {
+      const anomalies = anomalyDetection(entry.digits);
+      return {
+        Timestamp: entry.timestamp,
+        ...entry.digits.reduce((acc, digit, index) => {
+          acc[`Digit ${index + 1}`] = digit;
+          return acc;
+        }, {} as Record<string, number>),
+        Anomalies: anomalies.join(", "),
+      };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     const workbook = XLSX.utils.book_new();
@@ -211,7 +268,7 @@ export default function LiveDisplaySystem() {
             type="number"
             min="500"
             step="500"
-            value={1000}
+            value={intervalTime}
             onChange={(e) => {
               const value = Math.max(500, parseInt(e.target.value, 10));
               setIsRunning(false);
@@ -256,6 +313,16 @@ export default function LiveDisplaySystem() {
         ))}
       </div>
       <Line options={chartOptions} data={chartData} />
+      <div className="mt-8">
+        <h2 className="text-xl font-bold">Anomalies</h2>
+        <ul>
+          {anomalies.map((anomaly, index) => (
+            <li key={index} className="text-red-500">
+              {anomaly}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
