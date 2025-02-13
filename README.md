@@ -3,14 +3,19 @@ To run the project locally after cloning it from GitHub, follow these steps:
 
 Prerequisites
 Node.js: Ensure you have Node.js installed. You can download it from nodejs.org.
+
 Git: Ensure you have Git installed. You can download it from git-scm.com.
+
 Steps to Run the Project Locally
 Clone the Repository: Open a terminal and run the following command to clone the repository:
+
 git clone https://github.com/your-username/your-repository.git
+
 Replace your-username and your-repository with your GitHub username and repository name.
 
 Navigate to the Project Directory: Change to the project directory:
 cd your-repository
+
 
 Install Dependencies: Run the following command to install the project dependencies:
 npm install
