@@ -60,6 +60,7 @@ export default function LiveDisplaySystem() {
     { timestamp: string; digits: number[] }[]
   >([]);
   const [anomalies, setAnomalies] = useState<string[]>([]);
+  const [liveData, setLiveData] = useState(null);
 
   useEffect(() => {
     const checkSession = async () => {
@@ -180,6 +181,15 @@ export default function LiveDisplaySystem() {
     setIsAuthenticated(false);
   };
 
+  const fetchLiveData = async () => {
+    try {
+      const response = await axios.get("/api/live-data");
+      setLiveData(response.data);
+    } catch (error) {
+      console.error("Failed to fetch live data:", error);
+    }
+  };
+
   const chartOptions = {
     responsive: true,
     plugins: {
@@ -259,8 +269,17 @@ export default function LiveDisplaySystem() {
           >
             Reset
           </Button>
+          <Button onClick={fetchLiveData} className="bg-blue-500 text-white">
+            Fetch Live Data
+          </Button>
         </div>
       </div>
+      {liveData && (
+        <div className="mt-4">
+          <h2 className="text-xl font-bold">Live Data</h2>
+          <pre>{JSON.stringify(liveData, null, 2)}</pre>
+        </div>
+      )}
       <div className="flex justify-between items-center mb-6">
         <label className="flex items-center space-x-2">
           <span>Interval (ms):</span>

@@ -18,15 +18,13 @@ export default async function handler(
       .from("live_data")
       .select("*")
       .order("timestamp", { ascending: false })
-      .limit(100);
+      .limit(1);
 
     if (error) {
-      return res.status(500).json({ error: error.message });
+      return res.status(500).json({ error: "Failed to fetch live data" });
     }
 
-    const anomalies = anomalyDetection(data.map((row) => row.data));
-
-    return res.status(200).json({ data, anomalies });
+    return res.status(200).json(data);
   } else {
     res.setHeader("Allow", ["GET"]);
     res.status(405).end(`Method ${method} Not Allowed`);

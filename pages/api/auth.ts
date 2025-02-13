@@ -10,23 +10,17 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  const { method } = req;
-
-  if (method === "POST") {
-    const { email, password } = req.body;
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      return res.status(401).json({ error: error.message });
-    }
-
-    return res.status(200).json(data);
-  } else {
-    res.setHeader("Allow", ["POST"]);
-    res.status(405).end(`Method ${method} Not Allowed`);
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
+
+  const { email } = req.body;
+
+  const { error } = await supabase.auth.signInWithOtp({ email });
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  res.status(200).json({ message: "Check your email for the login link!" });
 }
